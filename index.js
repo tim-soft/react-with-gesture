@@ -32,6 +32,8 @@ const initialState = {
   down: false,
   first: true,
   shiftKey: false,
+  // [Distance, Scale]
+  pinch: [0, 1],
 }
 
 function handlers(set, props = {}, args) {
@@ -68,6 +70,7 @@ function handlers(set, props = {}, args) {
         previous: [pageX, pageY],
         down: true,
         time: Date.now(),
+        pinch: [0, state.pinch[1]],
         cancel: () => {
           stop()
           requestAnimationFrame(() => handleUp(event))
@@ -81,6 +84,42 @@ function handlers(set, props = {}, args) {
   const handleMove = event => {
     const { pageX, pageY, shiftKey } = event.touches ? event.touches[0] : event
     set(state => {
+      // Get the current pinch distance from touch event
+      const pinchDistance = (() => {
+        if (event.touches && event.touches.length === 2) {
+          const [finger1, finger2] = event.touches;
+          return Math.hypot(
+            finger1.pageX - finger2.pageX,
+            finger1.pageY - finger2.pageY
+          );
+        }
+        return 0;
+      })();
+
+      // Compare prev pinch distance with current distance to figure current direction
+      // zoom in or out?
+      const prevPinchDistance =
+        state.pinch[0] !== 0 ? state.pinch[0] : pinchDistance;
+      const pinchDirection = (() => {
+        if (pinchDistance > 0)
+          return pinchDistance - prevPinchDistance > 0 ? 'out' : 'in';
+        return undefined;
+      })();
+
+      // Find the change in distance between the previous and current pinch event
+      let pinchDelta = 0;
+      if (pinchDirection !== undefined)
+        pinchDelta = pinchDistance - prevPinchDistance;
+
+      // Get the diff between the prev scale and the current one
+      const pinchScale = (() => {
+        const prevPinchScale = state.pinch[1];
+        const currScale = prevPinchScale + pinchDelta / 500;
+        if (currScale < 0.5) return 0.5;
+
+        return currScale;
+      })();
+
       const time = Date.now()
       const x_dist = pageX - state.xy[0]
       const y_dist = pageY - state.xy[1]
@@ -105,6 +144,8 @@ function handlers(set, props = {}, args) {
         direction: [x_dist * scalar, y_dist * scalar],
         previous: state.xy,
         first: false,
+        // Initialize first pinch distance to calculate delta
+        pinch: [pinchDistance, pinchScale]
       }
       const temp = props.onAction && props.onAction(newProps)
       if (props.onMove) props.onMove(newProps)
